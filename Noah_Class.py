@@ -364,28 +364,43 @@ def find_compatible_device(sample_rate=16000, channels=1):
     return device_index, device_name
 
 
-def Listen(timeout=3, phrase_time_limit=10):
+def Listen(timeout=4, phrase_time_limit=10, retry_interval=2, max_wait=60):
     """
     Listens once, returns recognized speech (in Persian) as a string.
     Automatically handles audio device selection and cleanup.
+
+    On boot via cron, device may not be ready. This will retry finding
+    a compatible device until max_wait seconds have elapsed.
     """
     recognizer = sr.Recognizer()
 
-    # Automatically find a compatible microphone
-    device_index, device_name = find_compatible_device()
-    if device_index is None:
-        raise RuntimeError("No compatible input device found.")
-    print(f"Using microphone #{device_index}: {device_name}")
+    # Retry device detection on startup
+    waited = 0
+    device_index = None
+    device_name = None
+    while waited < max_wait:
+        device_index, device_name = find_compatible_device()
+        if device_index is not None:
+            break
+        print(f"No compatible device found, retrying in {retry_interval}s... ({waited}/{max_wait}s elapsed)")
+        time.sleep(retry_interval)
+        waited += retry_interval
 
+    if device_index is None:
+        raise RuntimeError("No compatible input device found after waiting.")
+
+    print(f"Using microphone #{device_index}: {device_name}")
     sample_rate = 16000
     chunk_size = 1024
     transcript = ""
     mic = None
 
     try:
-        mic = sr.Microphone(device_index=device_index,
-                             sample_rate=sample_rate,
-                             chunk_size=chunk_size)
+        mic = sr.Microphone(
+            device_index=device_index,
+            sample_rate=sample_rate,
+            chunk_size=chunk_size
+        )
         with mic as source:
             print("Adjusting for ambient noise...")
             recognizer.adjust_for_ambient_noise(source)
@@ -417,8 +432,6 @@ def Listen(timeout=3, phrase_time_limit=10):
                 pass
 
     return transcript
-
-
 
 
 
