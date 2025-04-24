@@ -4,8 +4,7 @@ import time
 import serial.tools.list_ports
 import requests
 import speech_recognition as sr
-import numpy as np
-import pyttsx3
+
 import asyncio
 import edge_tts
 import subprocess
@@ -17,32 +16,32 @@ from io import StringIO
 import pyaudio
 
 
-from PIL import Image,ImageDraw,ImageFont
+from PIL import Image,ImageDraw
 from luma.core.interface.serial import i2c
 from luma.oled.device import ssd1306
 
 
 
 
-def TalkOffline(text):
-    engine = pyttsx3.init()
-    rate = engine.getProperty('rate')
-    engine.setProperty('rate', rate - 25)
-    volume = engine.getProperty('volume')
-    engine.setProperty('volume', volume + 0.25)
-    voices = engine.getProperty('voices')
-    for voice in voices:
-        if hasattr(voice, 'languages') and voice.languages:
-            lang_item = voice.languages[0]
-            try:
-                lang = lang_item.decode('utf-8') if isinstance(lang_item, bytes) else lang_item
-            except Exception:
-                lang = str(lang_item)
-            if 'en' in lang.lower():
-                engine.setProperty('voice', voice.id)
-                break
-    engine.say(text)
-    engine.runAndWait()
+
+
+
+def Talk(text, farsi=False):
+    async def main(text, farsi):
+        try:
+            voice = "fa-IR-DilaraNeural" if farsi else "en-US-GuyNeural"
+            communicate = edge_tts.Communicate(text, voice)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+                output_file = tmp_file.name
+            await communicate.save(output_file)
+            subprocess.run(['mpg123', output_file])
+            time.sleep(0.5)
+            os.remove(output_file)
+        except Exception as e:
+            print("Error:", e)
+    asyncio.run(main(text, farsi))
+
+
 
 
 OLED_FACE_ERROR = False
@@ -54,7 +53,7 @@ try:
     image = Image.new("1", (width, height))
     draw = ImageDraw.Draw(image)
 except:
-    TalkOffline("Oh. I have a possible hardware problem connecting to the face monitor!")
+    Talk("Oh. I have a possible hardware problem connecting to the face monitor!")
     OLED_FACE_ERROR = True
 
 
@@ -304,23 +303,6 @@ def connect_wifi(password=None):
 
 
 
-
-
-
-def Talk(text, farsi=False):
-    async def main(text, farsi):
-        try:
-            voice = "fa-IR-DilaraNeural" if farsi else "en-US-GuyNeural"
-            communicate = edge_tts.Communicate(text, voice)
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
-                output_file = tmp_file.name
-            await communicate.save(output_file)
-            subprocess.run(['mpg123', output_file])
-            time.sleep(0.5)
-            os.remove(output_file)
-        except Exception as e:
-            print("Error:", e)
-    asyncio.run(main(text, farsi))
 
 
 
