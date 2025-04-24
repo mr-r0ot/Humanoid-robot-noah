@@ -323,14 +323,26 @@ def Talk(text, farsi=False):
     asyncio.run(main(text, farsi))
 
 
+
+
+
+
+
+
+
+
+
 def find_compatible_device(sample_rate=16000, channels=1):
     """
-    با PyAudio می‌گردد و اولین دستگاهی که:
-      - لااقل `channels` کانال ورودی داشته باشد
-      - از فرمت paInt16 در `sample_rate` پشتیبانی کند
-    را برمی‌گرداند.
+    Search for the first input device that supports:
+      - at least `channels` channels
+      - paInt16 format at `sample_rate`
+    Returns the device index and name, or (None, None) if not found.
     """
     pa = pyaudio.PyAudio()
+    device_index = None
+    device_name = None
+
     for idx in range(pa.get_device_count()):
         info = pa.get_device_info_by_index(idx)
         if info.get('maxInputChannels', 0) < channels:
@@ -342,53 +354,73 @@ def find_compatible_device(sample_rate=16000, channels=1):
                 input_channels=channels,
                 input_format=pyaudio.paInt16
             ):
-                return idx, info.get('name', 'Unknown')
+                device_index = idx
+                device_name = info.get('name', 'Unknown')
+                break
         except ValueError:
-            # این دستگاه فرمت پشتیبانی نمی‌کند
-            pass
-    return None, None
+            continue
+
+    pa.terminate()
+    return device_index, device_name
+
 
 def Listen(timeout=3, phrase_time_limit=10):
+    """
+    Listens once, returns recognized speech (in Persian) as a string.
+    Automatically handles audio device selection and cleanup.
+    """
     recognizer = sr.Recognizer()
 
-    # پیدا کردن خودکار دستگاه سازگار
+    # Automatically find a compatible microphone
     device_index, device_name = find_compatible_device()
     if device_index is None:
-        raise RuntimeError("هیچ دستگاه ورودی صدای سازگاری پیدا نشد.")
+        raise RuntimeError("No compatible input device found.")
+    print(f"Using microphone #{device_index}: {device_name}")
 
-    print(f"✔ از میکروفون #{device_index} استفاده می‌کنیم: «{device_name}»")
-
-    # حالا که می‌دانیم کاملاً سازگار است:
     sample_rate = 16000
     chunk_size = 1024
     transcript = ""
-    last_update = time.time()
+    mic = None
 
-    with sr.Microphone(
-        device_index=device_index,
-        sample_rate=sample_rate,
-        chunk_size=chunk_size
-    ) as source:
-        print("⟳ تنظیم برای نویز محیطی...")
-        recognizer.adjust_for_ambient_noise(source)
-        print("▶ شروع به گوش دادن...")
+    try:
+        mic = sr.Microphone(device_index=device_index,
+                             sample_rate=sample_rate,
+                             chunk_size=chunk_size)
+        with mic as source:
+            print("Adjusting for ambient noise...")
+            recognizer.adjust_for_ambient_noise(source)
+            print("Listening...")
 
-        try:
-            audio = recognizer.listen(source,
-                                      timeout=timeout,
-                                      phrase_time_limit=phrase_time_limit)
-            print("⏹ ضبط انجام شد، در حال تشخیص متن…")
-            text = recognizer.recognize_google(audio, language="fa-IR")
-            transcript = text
-            print("✅ تشخیص موفق:", text)
-        except sr.WaitTimeoutError:
-            print("⚠️ هیچ صدایی طی زمان مشخص‌شده شنیده نشد.")
-        except sr.UnknownValueError:
-            print("⚠️ متن قابل فهمی از صدا تشخیص داده نشد.")
-        except sr.RequestError as e:
-            print("⚠️ خطا در ارتباط با سرویس تشخیص گفتار:", e)
+            audio = recognizer.listen(
+                source,
+                timeout=timeout,
+                phrase_time_limit=phrase_time_limit
+            )
+            print("Recording complete, recognizing speech...")
+            transcript = recognizer.recognize_google(audio, language="fa-IR")
+            print("Recognition successful:", transcript)
+
+    except sr.WaitTimeoutError:
+        print("No speech detected within timeout.")
+    except sr.UnknownValueError:
+        print("Could not understand audio.")
+    except sr.RequestError as e:
+        print("Could not request results from service;", e)
+    except OSError as e:
+        print("Audio device error:", e)
+    finally:
+        # Ensure PyAudio resources are released
+        if mic:
+            try:
+                mic.pyaudio.terminate()
+            except Exception:
+                pass
 
     return transcript
+
+
+
+
 
 
 def extract_json(text):
