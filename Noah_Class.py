@@ -331,34 +331,18 @@ def Talk(text, farsi=False):
 
 
 
-def wait_for_usb_card(card_keyword="USB", timeout=60, interval=2):
-    """
-    Wait until /proc/asound/cards contains a card entry with `card_keyword`.
-    Returns True when found, False on timeout.
-    """
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            with open('/proc/asound/cards', 'r') as f:
-                content = f.read()
-            if card_keyword in content:
-                print(f"Found USB sound card: keyword '{card_keyword}' in /proc/asound/cards.")
-                return True
-        except Exception as e:
-            print(f"Error reading /proc/asound/cards: {e}")
-        print(f"USB sound card not yet available, retrying in {interval}s...")
-        time.sleep(interval)
-    return False
-
 
 def find_compatible_device(sample_rate=16000, channels=1):
     """
-    Search for an input device supporting paInt16 at sample_rate.
-    Returns (device_index, device_name) or (None, None).
+    Search for the first input device that supports:
+      - at least `channels` channels
+      - paInt16 format at `sample_rate`
+    Returns the device index and name, or (None, None) if not found.
     """
     pa = pyaudio.PyAudio()
     device_index = None
     device_name = None
+
     for idx in range(pa.get_device_count()):
         info = pa.get_device_info_by_index(idx)
         if info.get('maxInputChannels', 0) < channels:
@@ -375,35 +359,48 @@ def find_compatible_device(sample_rate=16000, channels=1):
                 break
         except ValueError:
             continue
+
     pa.terminate()
     return device_index, device_name
 
 
-def listen(timeout=3, phrase_time_limit=10):
+def Listen(timeout=4, phrase_time_limit=10, retry_interval=2, max_wait=60):
     """
-    Waits for USB card, detects compatible device, records and transcribes speech.
+    Listens once, returns recognized speech (in Persian) as a string.
+    Automatically handles audio device selection and cleanup.
+
+    On boot via cron, device may not be ready. This will retry finding
+    a compatible device until max_wait seconds have elapsed.
     """
-    # Step 1: wait for USB sound subsystem to be ready
-    if not wait_for_usb_card(timeout=60):
-        raise RuntimeError("USB sound card did not appear within timeout.")
-
-    # Step 2: find microphone device
-    device_index, device_name = find_compatible_device()
-    if device_index is None:
-        raise RuntimeError("No compatible input device found.")
-    print(f"Using microphone #{device_index}: {device_name}")
-
-    # Step 3: recording setup
     recognizer = sr.Recognizer()
+
+    # Retry device detection on startup
+    waited = 0
+    device_index = None
+    device_name = None
+    while waited < max_wait:
+        device_index, device_name = find_compatible_device()
+        if device_index is not None:
+            break
+        print(f"No compatible device found, retrying in {retry_interval}s... ({waited}/{max_wait}s elapsed)")
+        time.sleep(retry_interval)
+        waited += retry_interval
+
+    if device_index is None:
+        raise RuntimeError("No compatible input device found after waiting.")
+
+    print(f"Using microphone #{device_index}: {device_name}")
     sample_rate = 16000
     chunk_size = 1024
     transcript = ""
     mic = None
 
     try:
-        mic = sr.Microphone(device_index=device_index,
-                             sample_rate=sample_rate,
-                             chunk_size=chunk_size)
+        mic = sr.Microphone(
+            device_index=device_index,
+            sample_rate=sample_rate,
+            chunk_size=chunk_size
+        )
         with mic as source:
             print("Adjusting for ambient noise...")
             recognizer.adjust_for_ambient_noise(source)
@@ -423,10 +420,11 @@ def listen(timeout=3, phrase_time_limit=10):
     except sr.UnknownValueError:
         print("Could not understand audio.")
     except sr.RequestError as e:
-        print("Speech service request failed:", e)
+        print("Could not request results from service;", e)
     except OSError as e:
         print("Audio device error:", e)
     finally:
+        # Ensure PyAudio resources are released
         if mic:
             try:
                 mic.pyaudio.terminate()
@@ -434,6 +432,8 @@ def listen(timeout=3, phrase_time_limit=10):
                 pass
 
     return transcript
+
+
 
 
 
