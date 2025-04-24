@@ -1,10 +1,11 @@
 # ======== Noah.py ========
 # Import Class
+print("start..")
 from Noah_Class import *
 Physical_bug = False
 
 from os import system
-TalkOffline("Connect to the noah wifi network")
+print("Connect to the noah wifi network")
 system("sudo nmcli device disconnect")
 system('while true; do sudo nmcli device wifi connect "noah" ifname wlan0 && break; sleep 2; done')
 
@@ -12,11 +13,11 @@ system('while true; do sudo nmcli device wifi connect "noah" ifname wlan0 && bre
 
 # ==================Connect to Internet==================
 
-TalkOffline(f"Hi, My name is Nova! , {subAI.textGenetrator('welcom')}")
+Talk(f"Hi, My name is Nova! , {subAI.textGenetrator('welcom')}")
 # Set dlt Face
 if OLED_FACE_ERROR==False:AI_Face('normal')
 def Cnet():
-    TalkOffline("I check the status of the wifi connections!")
+    Talk("I check the status of the wifi connections!")
     system("sudo nmcli device disconnect")
     system('while true; do sudo nmcli device wifi connect "noah" ifname wlan0 && break; sleep 2; done')
 
