@@ -14,6 +14,7 @@ import tempfile
 from openai import OpenAI
 import csv,re
 from io import StringIO
+import pyaudio
 
 
 from PIL import Image,ImageDraw,ImageFont
@@ -322,67 +323,72 @@ def Talk(text, farsi=False):
     asyncio.run(main(text, farsi))
 
 
-def find_working_mic(sample_rate=16000, chunk_size=1024):
-    mic_names = sr.Microphone.list_microphone_names()
-    for idx, name in enumerate(mic_names):
-        try:
-            with sr.Microphone(
-                device_index=idx,
-                sample_rate=sample_rate,
-                chunk_size=chunk_size
-            ) as source:
-                return idx, name
-        except Exception:
+def find_compatible_device(sample_rate=16000, channels=1):
+    """
+    با PyAudio می‌گردد و اولین دستگاهی که:
+      - لااقل `channels` کانال ورودی داشته باشد
+      - از فرمت paInt16 در `sample_rate` پشتیبانی کند
+    را برمی‌گرداند.
+    """
+    pa = pyaudio.PyAudio()
+    for idx in range(pa.get_device_count()):
+        info = pa.get_device_info_by_index(idx)
+        if info.get('maxInputChannels', 0) < channels:
             continue
+        try:
+            if pa.is_format_supported(
+                rate=sample_rate,
+                input_device=idx,
+                input_channels=channels,
+                input_format=pyaudio.paInt16
+            ):
+                return idx, info.get('name', 'Unknown')
+        except ValueError:
+            # این دستگاه فرمت پشتیبانی نمی‌کند
+            pass
     return None, None
 
 def Listen(timeout=3, phrase_time_limit=10):
     recognizer = sr.Recognizer()
 
-    # خودکار پیدا کردن میکروفون قابل استفاده
-    device_index, mic_name = find_working_mic()
+    # پیدا کردن خودکار دستگاه سازگار
+    device_index, device_name = find_compatible_device()
     if device_index is None:
-        raise RuntimeError("I cant find a microphone...")
-    print(f"Use #{device_index}: {mic_name}")
+        raise RuntimeError("هیچ دستگاه ورودی صدای سازگاری پیدا نشد.")
 
-    # تنظیمات اصلی
+    print(f"✔ از میکروفون #{device_index} استفاده می‌کنیم: «{device_name}»")
+
+    # حالا که می‌دانیم کاملاً سازگار است:
     sample_rate = 16000
     chunk_size = 1024
     transcript = ""
-    last_update_time = time.time()
+    last_update = time.time()
 
     with sr.Microphone(
         device_index=device_index,
         sample_rate=sample_rate,
         chunk_size=chunk_size
     ) as source:
-        print("Set...")
+        print("⟳ تنظیم برای نویز محیطی...")
         recognizer.adjust_for_ambient_noise(source)
-        while True:
-            try:
-                print("Listen...")
-                audio = recognizer.listen(source,
-                                          timeout=timeout,
-                                          phrase_time_limit=phrase_time_limit)
-                print("Listen Finish.")
-                text = recognizer.recognize_google(audio, language="fa-IR")
-                transcript += " " + text
-                last_update_time = time.time()
-                print("تشخیص موفق:", text)
-                return transcript.strip()
+        print("▶ شروع به گوش دادن...")
 
-            except sr.WaitTimeoutError:
-                # اگر مدتی صحبت جدید نداشتیم، برگرد
-                if transcript and (time.time() - last_update_time) > timeout:
-                    return transcript.strip()
+        try:
+            audio = recognizer.listen(source,
+                                      timeout=timeout,
+                                      phrase_time_limit=phrase_time_limit)
+            print("⏹ ضبط انجام شد، در حال تشخیص متن…")
+            text = recognizer.recognize_google(audio, language="fa-IR")
+            transcript = text
+            print("✅ تشخیص موفق:", text)
+        except sr.WaitTimeoutError:
+            print("⚠️ هیچ صدایی طی زمان مشخص‌شده شنیده نشد.")
+        except sr.UnknownValueError:
+            print("⚠️ متن قابل فهمی از صدا تشخیص داده نشد.")
+        except sr.RequestError as e:
+            print("⚠️ خطا در ارتباط با سرویس تشخیص گفتار:", e)
 
-            except sr.UnknownValueError:
-                print("متن قابل فهمی تشخیص داده نشد، دوباره تلاش می‌کنم...")
-
-            except sr.RequestError as e:
-                print("خطا در برقراری ارتباط با سرویس تشخیص گفتار:", e)
-                return transcript.strip()
-
+    return transcript
 
 
 def extract_json(text):
