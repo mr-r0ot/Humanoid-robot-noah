@@ -16,9 +16,10 @@ from io import StringIO
 import pyaudio
 
 
-from PIL import Image,ImageDraw
+from PIL import Image,ImageDraw,ImageFont
 from luma.core.interface.serial import i2c
 from luma.oled.device import ssd1306
+
 
 
 
@@ -166,139 +167,6 @@ class NetWork:
 
 
 WIFI_SSID = "nova"
-
-def check_wifi_connection():
-    """
-    بررسی می‌کند که آیا سیستم به شبکه WIFI_SSID متصل است یا خیر.
-    برای ویندوز از دستور netsh wlan show interfaces و برای لینوکس از nmcli استفاده می‌کند.
-    """
-    try:
-        if sys.platform.startswith("win"):
-            # دریافت اطلاعات از netsh wlan show interfaces
-            cmd = ["netsh", "wlan", "show", "interfaces"]
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            output = result.stdout.lower()
-            # جستجو برای رشته "ssid" در خروجی
-            for line in output.splitlines():
-                if "ssid" in line:
-                    # فرض می‌کنیم خط به صورت "SSID                   : nova" است.
-                    parts = line.split(":")
-                    if len(parts) >= 2 and parts[1].strip() == WIFI_SSID.lower():
-                        return True
-        else:
-            # برای لینوکس: استفاده از nmcli برای بررسی اتصال فعال
-            cmd = ["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"]
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            for line in result.stdout.splitlines():
-                # خروجی معمولاً به صورت yes:nova یا no:...
-                if line.startswith("yes:"):
-                    ssid = line.split("yes:")[1].strip()
-                    if ssid.lower() == WIFI_SSID.lower():
-                        return True
-    except Exception as e:
-        print("خطا در بررسی اتصال:", e)
-    return False
-
-def connect_wifi_linux(password=None):
-    """
-    تلاش برای اتصال به وای‌فای در سیستم‌های لینوکسی با استفاده از nmcli.
-    """
-    if password is None:
-        cmd = ["nmcli", "device", "wifi", "connect", WIFI_SSID]
-    else:
-        cmd = ["nmcli", "device", "wifi", "connect", WIFI_SSID, "password", password]
-    
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return result.returncode, result.stdout, result.stderr
-
-def generate_wifi_profile_xml(password=None):
-    """
-    ایجاد فایل XML پروفایل وای‌فای برای ویندوز.
-    در صورت وجود password، پروفایل برای شبکه امن و در غیر این صورت برای شبکه باز ایجاد می‌شود.
-    """
-    if password is None:
-        xml_content = f'''<?xml version="1.0"?>
-<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
-    <name>{WIFI_SSID}</name>
-    <SSIDConfig>
-        <SSID>
-            <name>{WIFI_SSID}</name>
-        </SSID>
-    </SSIDConfig>
-    <connectionType>ESS</connectionType>
-    <connectionMode>manual</connectionMode>
-    <MSM>
-        <security>
-            <authEncryption>
-                <authentication>open</authentication>
-                <encryption>none</encryption>
-                <useOneX>false</useOneX>
-            </authEncryption>
-        </security>
-    </MSM>
-</WLANProfile>'''
-    else:
-        xml_content = f'''<?xml version="1.0"?>
-<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
-    <name>{WIFI_SSID}</name>
-    <SSIDConfig>
-        <SSID>
-            <name>{WIFI_SSID}</name>
-        </SSID>
-    </SSIDConfig>
-    <connectionType>ESS</connectionType>
-    <connectionMode>manual</connectionMode>
-    <MSM>
-        <security>
-            <authEncryption>
-                <authentication>WPA2PSK</authentication>
-                <encryption>AES</encryption>
-                <useOneX>false</useOneX>
-            </authEncryption>
-            <sharedKey>
-                <keyType>passPhrase</keyType>
-                <protected>false</protected>
-                <keyMaterial>{password}</keyMaterial>
-            </sharedKey>
-        </security>
-    </MSM>
-</WLANProfile>'''
-    return xml_content
-
-def connect_wifi_windows(password=None):
-    """
-    تلاش برای اتصال به وای‌فای در ویندوز با استفاده از netsh wlan.
-    ابتدا یک پروفایل موقت ایجاد می‌شود، سپس با استفاده از آن اقدام به اتصال می‌کند.
-    """
-    xml_profile = generate_wifi_profile_xml(password)
-    # ایجاد فایل XML موقت
-    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".xml") as temp_file:
-        temp_file.write(xml_profile)
-        temp_filename = temp_file.name
-
-    try:
-        # افزودن پروفایل به سیستم
-        add_profile_cmd = f'netsh wlan add profile filename="{temp_filename}" user=all'
-        subprocess.run(add_profile_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        # تلاش برای اتصال
-        connect_cmd = f'netsh wlan connect name={WIFI_SSID} ssid={WIFI_SSID}'
-        result = subprocess.run(connect_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        return result.returncode, result.stdout, result.stderr
-    finally:
-        os.remove(temp_filename)
-
-def connect_wifi(password=None):
-    """
-    انتخاب تابع مناسب بر اساس سیستم عامل.
-    """
-    if sys.platform.startswith("win"):
-        return connect_wifi_windows(password)
-    else:
-        return connect_wifi_linux(password)
-
-
-
-
 
 
 
