@@ -1,3 +1,4 @@
+print("Start...")
 # ======== Noah.py ========
 # Import Class
 from Noah_Class import *
@@ -96,50 +97,59 @@ else:Talk("خب. حالا چجوری می تونم بهت کمک کنم؟",farsi
 # a loop for work 
 print("[+] Start while....")
 while True:
-    # Start Listen to user speak
-    heard=Listen()
-
-    if heard: # IF heard
-
-        if NetWork.Check_Net()==True: # Check Internet Connection (-- If we dont have net, run Cnet() --)
-
-
-            if Physical_bug==False: # If we have arduino
-
-                North, West, South, East = phy.Distance() # Get Map
-                response=AI(heard,loc=f"""
-North : {North}
-West : {West}
-South : {South}
-East : {East}""")
-                
-            else:
-                response=AI(heard, loc='') # Send to LLM
-            
-
-
-        # ==============================USE FROM INFO==================================
-            # Set Face
-            if OLED_FACE_ERROR == False:AI_Face(response['face'])
-            
-
-            # Speak
-            if response['lange'] == 'en':Talk(response['speak_text'])
-            else:Talk(response['speak_text'],farsi=True)
-            
-
-            # Run
-            config={}
-            if Physical_bug==False:
-                con_run(
-                    time=response['engine1']['time'],
-                    mode=response['engine1']['mode'],
-                    rotate=response['engine1']['rotate']
-                    )
-
-
-        else:
+    # ۱. منتظر بمان تا کاربر حرف بزند
+    heard = ""
+    while not heard:
+        heard = Listen(
+            timeout=3,
+            phrase_time_limit=10,
+            language='en-US' if lang=='en' else 'fa-IR'
+        )
+    print("Heard.")
+    # ۳. اطمینان از اتصال اینترنت
+    try:
+        if not NetWork.Check_Net()==True:
             Cnet()
+            continue
+    except Exception:
+        pass
+    print("Network is ok")
 
+    # ۴. خواندن فاصله‌ها در صورت اتصال سخت‌افزار
+    if not Physical_bug:
+        North, West, South, East = phy.Distance()
+        loc_str = f"North: {North}\nWest: {West}\nSouth: {South}\nEast: {East}"
+    else:
+        loc_str = ''
 
-phy.close()
+    # ۵. فراخوانی AI درون بلوک try/except
+    try:
+        response = AI(heard, loc=loc_str)
+    except Exception:
+        response = {
+            'speak_text': 'متأسفم، در پردازش درخواست شما خطایی رخ داد.',
+            'lange': 'fa',
+            'face': 'sad',
+            'engine1': {'time': 0, 'mode': 'off', 'rotate': 'forward'}
+        }
+
+    # ۶. به‌روزرسانی چهره OLED بر اساس خروجی AI
+    if OLED_FACE_ERROR == False:AI_Face(response['face'])
+
+    # ۷. صحبت کردن ربات
+    if response['lange'] == 'en':
+        Talk(response['speak_text'])
+    else:
+        Talk(response['speak_text'],farsi=True)
+
+    # ۸. حرکت موتورها بر اساس خروجی AI
+    if not Physical_bug:
+        cfg = response.get('engine1', {})
+        con_run(
+            time=cfg.get('time', 0),
+            mode=cfg.get('mode', 'off'),
+            rotate=cfg.get('rotate', 'forward')
+        )
+
+    # ۹. کمی مکث برای پایداری حلقه
+    time.sleep(0.1)
