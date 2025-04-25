@@ -351,24 +351,29 @@ def AI(text,loc):
 
 
     apis=fetch_sheet_rows()
+    n=0
     for api in apis:
         api=api.replace("'",'').replace('"','')
-        client = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=api,
-            )
+        try:
+            print("[ ! ] Test use from api ",n)
+            client = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=api
+                )
 
-        completion = client.chat.completions.create(
-            model="deepseek/deepseek-r1:free",
-            messages=[
-                {
-                "role": "user",
-                "content": data
-                }
-            ]
-            )
-        return(json.loads(extract_json(completion.choices[0].message.content)))
-    
+            completion = client.chat.completions.create(
+                model="deepseek/deepseek-r1:free",
+                messages=[
+                    {
+                    "role": "user",
+                    "content": data
+                    }
+                ]
+                )
+            return(json.loads(extract_json(completion.choices[0].message.content)))
+        except:
+            continue
+        n+=1
     return ({'speak_text': 'من سک مشکل احتمالی در پردازش ها داشتم. ممکن است به دلیل کندی اینترنت ویا غیره باشد. اگر مشکل از اینترنت نبود من ره به سازنده خودم یعنی محمد طاها گرجی نشان دهید', 'lange': 'fa', 'face': 'angry', 'engine1': {'time': 0, 'mode': 'off', 'rotate': 'forward'}})
 
     
