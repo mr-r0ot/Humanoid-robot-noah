@@ -160,7 +160,7 @@ class subAI:
 class NetWork:
     def Check_Net():
         try:
-            requests.get('https://google.com')
+            requests.get('https://openrouter.ai')
             return True
         except:
             return False
@@ -188,7 +188,6 @@ def Listen(timeout=4, phrase_time_limit=5, language='fa-IR'):
         Listen._device_index = None
         RATE = 16000
         CHANNELS = 1
-        print("Start Listen..")
 
         # find first compatible input device
         for idx in range(Listen._pa.get_device_count()):
@@ -213,6 +212,7 @@ def Listen(timeout=4, phrase_time_limit=5, language='fa-IR'):
 
         Listen._recognizer = sr.Recognizer()
         Listen._initialized = True
+    print("Start Listen..")
 
     # grab mic using the stored device index
     mic = sr.Microphone(
