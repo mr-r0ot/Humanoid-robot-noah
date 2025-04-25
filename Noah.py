@@ -103,7 +103,7 @@ while True:
         heard = Listen(
             timeout=3,
             phrase_time_limit=10,
-            language='en-US' if lang=='en' else 'fa-IR'
+            language='fa-IR'
         )
     print("Heard.")
     # ۳. اطمینان از اتصال اینترنت
