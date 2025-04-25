@@ -180,108 +180,64 @@ WIFI_SSID = "nova"
 
 
 
+def Listen(timeout=4, phrase_time_limit=5, language='fa-IR'):
+    # One‐time initialization of PyAudio + device index + Recognizer
+    if not hasattr(Listen, "_initialized"):
+        import pyaudio
+        Listen._pa = pyaudio.PyAudio()
+        Listen._device_index = None
+        RATE = 16000
+        CHANNELS = 1
+        print("Start Listen..")
 
+        # find first compatible input device
+        for idx in range(Listen._pa.get_device_count()):
+            info = Listen._pa.get_device_info_by_index(idx)
+            if info.get('maxInputChannels', 0) < CHANNELS:
+                continue
+            try:
+                if Listen._pa.is_format_supported(
+                    rate=RATE,
+                    input_device=idx,
+                    input_channels=CHANNELS,
+                    input_format=pyaudio.paInt16
+                ):
+                    Listen._device_index = idx
+                    break
+            except ValueError:
+                continue
 
-def find_compatible_device(sample_rate=16000, channels=1):
-    """
-    Search for the first input device that supports:
-      - at least `channels` channels
-      - paInt16 format at `sample_rate`
-    Returns the device index and name, or (None, None) if not found.
-    """
-    pa = pyaudio.PyAudio()
-    device_index = None
-    device_name = None
+        if Listen._device_index is None:
+            Listen._pa.terminate()
+            raise RuntimeError("No compatible input device found after scanning.")
 
-    for idx in range(pa.get_device_count()):
-        info = pa.get_device_info_by_index(idx)
-        if info.get('maxInputChannels', 0) < channels:
-            continue
+        Listen._recognizer = sr.Recognizer()
+        Listen._initialized = True
+
+    # grab mic using the stored device index
+    mic = sr.Microphone(
+        device_index=Listen._device_index,
+        sample_rate=16000,
+        chunk_size=1024
+    )
+
+    with mic as source:
+        # brief ambient adjustment
+        Listen._recognizer.adjust_for_ambient_noise(source, duration=0.5)
         try:
-            if pa.is_format_supported(
-                rate=sample_rate,
-                input_device=idx,
-                input_channels=channels,
-                input_format=pyaudio.paInt16
-            ):
-                device_index = idx
-                device_name = info.get('name', 'Unknown')
-                break
-        except ValueError:
-            continue
-
-    pa.terminate()
-    return device_index, device_name
-
-
-def Listen(timeout=4, phrase_time_limit=10, retry_interval=2, max_wait=60):
-    """
-    Listens once, returns recognized speech (in Persian) as a string.
-    Automatically handles audio device selection and cleanup.
-
-    On boot via cron, device may not be ready. This will retry finding
-    a compatible device until max_wait seconds have elapsed.
-    """
-    recognizer = sr.Recognizer()
-
-    # Retry device detection on startup
-    waited = 0
-    device_index = None
-    device_name = None
-    while waited < max_wait:
-        device_index, device_name = find_compatible_device()
-        if device_index is not None:
-            break
-        print(f"No compatible device found, retrying in {retry_interval}s... ({waited}/{max_wait}s elapsed)")
-        time.sleep(retry_interval)
-        waited += retry_interval
-
-    if device_index is None:
-        raise RuntimeError("No compatible input device found after waiting.")
-
-    print(f"Using microphone #{device_index}: {device_name}")
-    sample_rate = 16000
-    chunk_size = 1024
-    transcript = ""
-    mic = None
-
-    try:
-        mic = sr.Microphone(
-            device_index=device_index,
-            sample_rate=sample_rate,
-            chunk_size=chunk_size
-        )
-        with mic as source:
-            print("Adjusting for ambient noise...")
-            recognizer.adjust_for_ambient_noise(source)
-            print("Listening...")
-
-            audio = recognizer.listen(
+            audio = Listen._recognizer.listen(
                 source,
                 timeout=timeout,
                 phrase_time_limit=phrase_time_limit
             )
-            print("Recording complete, recognizing speech...")
-            transcript = recognizer.recognize_google(audio, language="fa-IR")
-            print("Recognition successful:", transcript)
+        except sr.WaitTimeoutError:
+            return 'Error'
 
-    except sr.WaitTimeoutError:
-        print("No speech detected within timeout.")
-    except sr.UnknownValueError:
-        print("Could not understand audio.")
-    except sr.RequestError as e:
-        print("Could not request results from service;", e)
-    except OSError as e:
-        print("Audio device error:", e)
-    finally:
-        # Ensure PyAudio resources are released
-        if mic:
-            try:
-                mic.pyaudio.terminate()
-            except Exception:
-                pass
-
-    return transcript
+    # perform recognition
+    try:
+        return Listen._recognizer.recognize_google(audio, language=language)
+    except (sr.UnknownValueError, sr.RequestError):
+        return 'Error'
 
 
 
