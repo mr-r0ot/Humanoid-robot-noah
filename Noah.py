@@ -1,6 +1,5 @@
 # ======== Noah.py ========
 # Import Class
-print("start..")
 from Noah_Class import *
 Physical_bug = False
 
